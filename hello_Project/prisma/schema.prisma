@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ===== PROCUREMENT DOMAIN MODELS =====
+
+model Vendor {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  email       String?
+  phone       String?
+  address     String?
+  category    String?  // e.g., "Cement", "Steel", "Electrical"
+  rating      Float    @default(0) // 0-5 performance score
+  status      String   @default("active") // active, suspended, blacklisted
+  totalOrders Int      @default(0)
+  onTimeDelivery Float  @default(0) // percentage
+  complianceScore Float @default(0) // 0-100
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents Document[]
+  invoices  Invoice[]
+  purchaseOrders PurchaseOrder[]
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  filename    String
+  fileType    String   // "invoice", "po", "grn", "contract", "quotation"
+  status      String   @default("uploaded") // uploaded, processed, flagged, approved
+  extractedText String?
+  extractedData String? // JSON string of structured data
+  vendorId    String?
+  vendor      Vendor?  @relation(fields: [vendorId], references: [id])
+  projectId   String?
+  amount      Float?
+  currency    String   @default("USD")
+  documentDate String?
+  riskScore   Float?   // 0-100, higher = riskier
+  riskFlags   String?  // JSON array of risk flags
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  matches ThreeWayMatch[]
+}
+
+model PurchaseOrder {
+  id          String   @id @default(cuid())
+  poNumber    String   @unique
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  projectId   String?
+  items       String   // JSON array of line items
+  totalAmount Float
+  currency    String   @default("USD")
+  status      String   @default("draft") // draft, sent, acknowledged, fulfilled, closed
+  issueDate   String?
+  expectedDelivery String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  matchesAsPO ThreeWayMatch[]
+}
+
+model GoodsReceiptNote {
+  id          String   @id @default(cuid())
+  grnNumber   String   @unique
+  poId        String?
+  vendorName  String
+  items       String   // JSON array of received items
+  receivedDate String?
+  status      String   @default("pending") // pending, verified, discrepancy
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  matchesAsGRN ThreeWayMatch[]
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  invoiceNumber String  @unique
+  vendorId    String?
+  vendor      Vendor?  @relation(fields: [vendorId], references: [id])
+  poId        String?
+  grnId       String?
+  vendorName  String
+  items       String   // JSON array of invoiced items
+  totalAmount Float
+  taxAmount   Float    @default(0)
+  currency    String   @default("USD")
+  invoiceDate String?
+  dueDate     String?
+  status      String   @default("pending") // pending, verified, paid, disputed
+  isDuplicate Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  matchesAsInvoice ThreeWayMatch[]
+}
+
+model ThreeWayMatch {
+  id          String   @id @default(cuid())
+  poId        String?
+  grnId       String?
+  invoiceId   String?
+  documentId  String?
+
+  po          PurchaseOrder?    @relation(fields: [poId], references: [id])
+  grn         GoodsReceiptNote? @relation(fields: [grnId], references: [id])
+  invoice     Invoice?          @relation(fields: [invoiceId], references: [id])
+  document    Document?         @relation(fields: [documentId], references: [id])
+
+  matchStatus String   @default("pending") // matched, partial_match, mismatch
+  discrepancies String? // JSON array of discrepancy details
+  confidenceScore Float @default(0) // 0-100
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model FraudAlert {
+  id          String   @id @default(cuid())
+  documentId  String?
+  vendorId    String?
+  alertType   String   // "duplicate_invoice", "price_anomaly", "amount_mismatch", "fake_vendor"
+  severity    String   @default("medium") // low, medium, high, critical
+  description String
+  status      String   @default("open") // open, investigating, resolved, dismissed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  sessionId   String
+  role        String   // "user", "assistant", "system"
+  content     String
+  sources     String?  // JSON array of source document references
+  createdAt   DateTime @default(now())
+}
